@@ -10,10 +10,12 @@
 # Author:
 #   jasonmay
 
-{inspect} = require('util')
+url         = require('url')
+querystring = require('querystring')
+request     = require('request')
+{inspect}   = require('util')
 
 module.exports = (robot) ->
-  request = require('request')
   robot.brain.on 'loaded', =>
     robot.brain.data.savedMessages ||= []
     unless process.env.DATANINJA_PROFILE?
@@ -21,24 +23,8 @@ module.exports = (robot) ->
     unless process.env.HOARDER_SERVICE_URL?
       throw "Hoarder URL not defined" unless process.env.HOARDER_SERVICE_URL?
 
-  hoard = (msg, emote) ->
-      created = new Date().getTime()
-      msgData = {
-        nick: msg.message.user.name,
-        channel: msg.message.room,
-        message: msg.message.text,
-        profile: process.env.DATANINJA_PROFILE,
-        network: process.env.HUBOT_IRC_SERVER,
-        time: created
-        params: {}
-      }
-
-      robot.logger.debug emote
-      if emote is true
-        msgData.params.action = true
-      robot.logger.debug "Sending: #{inspect msgData}"
-
-      r = request(
+  postToHoarder = (msgData) ->
+      request(
         {
           url: "#{process.env.HOARDER_SERVICE_URL}/message/create",
           method: 'post',
@@ -63,9 +49,48 @@ module.exports = (robot) ->
               robot.logger.warning error
         )
 
+  hoard = (msg, emote) ->
+      created = new Date().getTime()
+      msgData = {
+        nick: msg.message.user.name,
+        channel: msg.message.room,
+        message: msg.message.text,
+        profile: process.env.DATANINJA_PROFILE,
+        network: process.env.HUBOT_IRC_SERVER,
+        time: created
+        params: {}
+      }
+
+      robot.logger.debug emote
+      if emote is true
+        msgData.params.action = true
+      robot.logger.debug "Sending: #{inspect msgData}"
+      postToHoarder msgData
+
+
   robot.hear /./, (msg) ->
     hoard(msg, false)
 
+  robot.router.get("/hubot/hoarder", (req, res) ->
+    query = querystring.parse(url.parse(req.url).query)
+
+    body = ""
+    if query.b is "up"
+      savedMessages = robot.brain.data.savedMessages
+      robot.logger.debug "Saved messages: #{inspect savedMessages}"
+      if savedMessages and savedMessages.length > 0
+        robot.brain.data.savedMessages = []
+        # if any of them fail they will end up back in
+        # the brain regardless, so it's safe to clear out
+        # ahead of time
+        for msgData in savedMessages
+          robot.logger.debug "Unqueuing and posting: #{inspect msgData}"
+          postToHoarder msgData
+        body = "OK"
+
+    res.end body
+  )
+
   # NOTE: hopefully can get something like this in hubot core
-  #robot.hearEmote /./, (msg) ->
+  # robot.hearEmote /./, (msg) ->
   #    hoard(msg, true)
