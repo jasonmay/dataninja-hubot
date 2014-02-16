@@ -15,13 +15,35 @@ querystring = require('querystring')
 request     = require('request')
 {inspect}   = require('util')
 
+unless process.env.DATANINJA_PROFILE?
+  throw "Profile not defined"
+unless process.env.HOARDER_SERVICE_URL?
+  throw "Hoarder URL not defined" unless process.env.HOARDER_SERVICE_URL?
+
 module.exports = (robot) ->
   robot.brain.on 'loaded', =>
     robot.brain.data.savedMessages ||= []
-    unless process.env.DATANINJA_PROFILE?
-      throw "Profile not defined"
-    unless process.env.HOARDER_SERVICE_URL?
-      throw "Hoarder URL not defined" unless process.env.HOARDER_SERVICE_URL?
+    if robot.brain.data.savedMessages.length > 0
+      request(
+        {
+          method: "get",
+          url: "#{process.env.HOARDER_SERVICE_URL}/health.json"
+        },
+        (err, res) ->
+          if err
+            robot.logger.warning "Hoarder not found!"
+          else
+            savedMessages = robot.brain.data.savedMessages
+            robot.logger.debug "Saved messages: #{inspect savedMessages}"
+            if savedMessages and savedMessages.length > 0
+              robot.brain.data.savedMessages = []
+              # if any of them fail they will end up back in
+              # the brain regardless, so it's safe to clear out
+              # ahead of time
+              for msgData in savedMessages
+                robot.logger.debug "Unqueuing and posting: #{inspect msgData}"
+                postToHoarder msgData
+      )
 
   postToHoarder = (msgData) ->
       request(
