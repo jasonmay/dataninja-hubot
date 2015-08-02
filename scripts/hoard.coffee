@@ -15,13 +15,19 @@ querystring = require('querystring')
 request     = require('request')
 {inspect}   = require('util')
 
-unless process.env.DATANINJA_PROFILE?
-  throw "Profile not defined"
-unless process.env.HOARDER_SERVICE_URL?
-  throw "Hoarder URL not defined" unless process.env.HOARDER_SERVICE_URL?
-
 module.exports = (robot) ->
+
+  runHoard = true
+  unless process.env.DATANINJA_PROFILE?
+    robot.logger.warning "DATANINJA_PROFILE not set"
+    runHoard = false
+  unless process.env.HOARDER_SERVICE_URL?
+    robot.logger.warning "Hoarder URL not set"
+    runHoard = false
+
   robot.brain.on 'loaded', =>
+    return unless runHoard
+
     robot.brain.data.savedMessages ||= []
     if robot.brain.data.savedMessages.length > 0
       request(
